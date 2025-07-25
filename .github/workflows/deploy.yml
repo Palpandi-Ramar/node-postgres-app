@@ -1,0 +1,54 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Step 2: Copy project files to EC2 (without node_modules)
+      - name: Copy files to EC2
+        uses: appleboy/scp-action@v0.1.8
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "."
+          target: "/home/ec2-user/node-postgres-app"
+          strip_components: 1
+          rm: true
+          exclude: |
+            node_modules
+            .git
+            .github
+
+      # Step 3: Create .env on EC2
+      - name: Create .env file
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "${{ secrets.APP_ENV }}" > /home/ec2-user/node-postgres-app/.env
+
+      # Step 4: Install production dependencies & restart PM2
+      - name: Install & Restart
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ec2-user/node-postgres-app
+            npm ci --only=production
+            pm2 restart myapp || pm2 start app.js --name myapp
+            pm2 save

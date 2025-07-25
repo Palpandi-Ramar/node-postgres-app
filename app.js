@@ -23,6 +23,11 @@ app.get('/about', (req, res) => {
   res.render('about');
 });
 
+// help Page
+app.get('/help', (req, res) => {
+  res.render('help');
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });

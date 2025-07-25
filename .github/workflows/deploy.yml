@@ -10,13 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Step 2: Copy project files to EC2 (without node_modules)
       - name: Copy files to EC2
-        uses: appleboy/scp-action@v0.1.8
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
@@ -30,9 +28,8 @@ jobs:
             .git
             .github
 
-      # Step 3: Create .env on EC2
       - name: Create .env file
-        uses: appleboy/ssh-action@v0.1.8
+        uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
@@ -40,9 +37,8 @@ jobs:
           script: |
             echo "${{ secrets.APP_ENV }}" > /home/ec2-user/node-postgres-app/.env
 
-      # Step 4: Install production dependencies & restart PM2
-      - name: Install & Restart
-        uses: appleboy/ssh-action@v0.1.8
+      - name: Install & Restart PM2
+        uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user

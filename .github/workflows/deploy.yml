@@ -6,46 +6,73 @@ on:
       - main
 
 env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  APPLICATION_NAME: ${{ secrets.APPLICATION_NAME }}
+  ENVIRONMENT_NAME: ${{ secrets.ENVIRONMENT_NAME }}
+  S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
   VERSION_LABEL: v-${{ github.run_number }}
+  ZIP_FILE: app-v-${{ github.run_number }}.zip
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-    - name: Set up AWS CLI
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
+      - name: Set Up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: Zip the application
-      run: |
-        zip -r app.zip . -x "*.git*" "*.github*" "tmp/*" "log/*"
+      - name: Zip Application
+        run: |
+          zip -r $ZIP_FILE . -x '*.git*' 'node_modules/*' '.github/*'
 
-    - name: Upload ZIP to S3
-      run: |
-        aws s3 cp app.zip s3://${{ secrets.S3_BUCKET_NAME }}/app-${{ env.VERSION_LABEL }}.zip
+      - name: Upload to S3
+        run: |
+          aws s3 cp $ZIP_FILE s3://$S3_BUCKET_NAME/$ZIP_FILE
 
-    - name: Create Application Version
-      run: |
-        aws elasticbeanstalk create-application-version \
-          --application-name "${{ secrets.APPLICATION_NAME }}" \
-          --version-label "${{ env.VERSION_LABEL }}" \
-          --source-bundle S3Bucket=${{ secrets.S3_BUCKET_NAME }},S3Key=app-${{ env.VERSION_LABEL }}.zip
+      - name: Create Application Version
+        run: |
+          aws elasticbeanstalk create-application-version \
+            --application-name "$APPLICATION_NAME" \
+            --version-label "$VERSION_LABEL" \
+            --source-bundle S3Bucket=$S3_BUCKET_NAME,S3Key=$ZIP_FILE
 
-    - name: Wait for version to register
-      run: sleep 60
+      - name: Wait until application version is PROCESSED
+        run: |
+          echo "Waiting for version $VERSION_LABEL to be PROCESSED..."
+          for i in {1..30}; do
+            STATUS=$(aws elasticbeanstalk describe-application-versions \
+              --application-name "$APPLICATION_NAME" \
+              --version-labels "$VERSION_LABEL" \
+              --query 'ApplicationVersions[0].Status' \
+              --output text)
 
-    - name: Update Environment to New Version
-      run: |
-        aws elasticbeanstalk update-environment \
-          --environment-name "${{ secrets.ENVIRONMENT_NAME }}" \
-          --version-label "${{ env.VERSION_LABEL }}"
+            echo "Current status: $STATUS"
 
-    - name:  Deployment Complete
-      run: echo "Successfully deployed version $VERSION_LABEL"
+            if [ "$STATUS" == "PROCESSED" ]; then
+              echo "Version is PROCESSED."
+              break
+            fi
+
+            if [ "$STATUS" == "FAILED" ]; then
+              echo "Version processing failed."
+              exit 1
+            fi
+
+            echo "Still waiting..."
+            sleep 10
+          done
+
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          aws elasticbeanstalk update-environment \
+            --environment-name "$ENVIRONMENT_NAME" \
+            --version-label "$VERSION_LABEL"

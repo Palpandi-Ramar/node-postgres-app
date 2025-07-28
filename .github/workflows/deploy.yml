@@ -1,50 +1,40 @@
-name: Deploy to EC2
+name: Deploy to Elastic Beanstalk
 
 on:
   push:
     branches:
-      - main
+      - main  # Change if using another branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Copy files to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "."
-          target: "/home/ec2-user/node-postgres-app"
-          strip_components: 1
-          rm: true
-          exclude: |
-            node_modules
-            .git
-            .github
+      - name: Zip source code
+        run: zip -r app.zip . -x "*.git*" "*.github*"
 
-      - name: Create .env file
-        uses: appleboy/ssh-action@v0.1.10
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            echo "${{ secrets.APP_ENV }}" > /home/ec2-user/node-postgres-app/.env
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Install & Restart PM2
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd /home/ec2-user/node-postgres-app
-            npm ci --only=production
-            pm2 restart myapp || pm2 start app.js --name myapp
-            pm2 save
+      - name: Upload to S3
+        run: aws s3 cp app.zip s3://${{ secrets.S3_BUCKET }}/app-${{ github.run_number }}.zip
+
+      - name: Create EB Application Version
+        run: |
+          aws elasticbeanstalk create-application-version \
+            --application-name "${{ secrets.APPLICATION_NAME }}" \
+            --version-label "v-${{ github.run_number }}" \
+            --source-bundle S3Bucket="${{ secrets.S3_BUCKET }}",S3Key="app-${{ github.run_number }}.zip"
+
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          aws elasticbeanstalk update-environment \
+            --environment-name "${{ secrets.ENVIRONMENT_NAME }}" \
+            --version-label "v-${{ github.run_number }}"

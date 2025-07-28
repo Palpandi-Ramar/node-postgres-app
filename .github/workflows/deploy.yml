@@ -5,40 +5,45 @@ on:
     branches:
       - main
 
-env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  APPLICATION_NAME: ${{ secrets.APPLICATION_NAME }}
-  ENVIRONMENT_NAME: ${{ secrets.ENVIRONMENT_NAME }}
-  S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
-  VERSION_LABEL: v-${{ github.run_number }}
-  ZIP_FILE: app-v-${{ github.run_number }}.zip
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      APPLICATION_NAME: ${{ secrets.EB_APP_NAME }}
+      ENVIRONMENT_NAME: ${{ secrets.EB_ENV_NAME }}
+      S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+      VERSION_LABEL: v-${{ github.run_number }}
+      ZIP_FILE: app-v-${{ github.run_number }}.zip
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Set Up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          node-version: 20
 
-      - name: Zip Application
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+
+      - name: Zip deployment package
         run: |
-          zip -r $ZIP_FILE . -x '*.git*' 'node_modules/*' '.github/*'
+          zip -r $ZIP_FILE . -x "*.git*" "node_modules/*" "tests/*"
 
       - name: Upload to S3
         run: |
           aws s3 cp $ZIP_FILE s3://$S3_BUCKET_NAME/$ZIP_FILE
 
-      - name: Create Application Version
+      - name: Create new EB Application Version
         run: |
           aws elasticbeanstalk create-application-version \
             --application-name "$APPLICATION_NAME" \
@@ -47,27 +52,25 @@ jobs:
 
       - name: Wait until application version is PROCESSED
         run: |
-          echo "Waiting for version $VERSION_LABEL to be PROCESSED..."
           for i in {1..30}; do
             STATUS=$(aws elasticbeanstalk describe-application-versions \
               --application-name "$APPLICATION_NAME" \
               --version-labels "$VERSION_LABEL" \
               --query 'ApplicationVersions[0].Status' \
-              --output text)
+              --output text 2>/dev/null)
 
-            echo "Current status: $STATUS"
+            echo "Status: $STATUS"
 
             if [ "$STATUS" == "PROCESSED" ]; then
-              echo "Version is PROCESSED."
+              echo "Version is ready for deployment."
               break
             fi
 
-            if [ "$STATUS" == "FAILED" ]; then
-              echo "Version processing failed."
+            if [ "$i" -eq 30 ]; then
+              echo "Timed out waiting for version to be processed."
               exit 1
             fi
 
-            echo "Still waiting..."
             sleep 10
           done
 

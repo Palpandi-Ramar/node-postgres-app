@@ -7,38 +7,48 @@ on:
 
 jobs:
   deploy:
+    name: Deploy to AWS EB
     runs-on: ubuntu-latest
 
-    permissions:
-      id-token: write
-      contents: read
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      APPLICATION_NAME: ${{ secrets.APPLICATION_NAME }}
+      ENVIRONMENT_NAME: ${{ secrets.ENVIRONMENT_NAME }}
+      S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+      VERSION_LABEL: v-${{ github.run_number }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout source
+      uses: actions/checkout@v4
 
-      - name: Zip source code
-        run: zip -r app.zip . -x "*.git*" "*.github*"
+    - name: Zip the application
+      run: |
+        zip -r app.zip . -x ".git/*"
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ secrets.AWS_REGION }}
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+        # aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }} # Only if using temporary credentials
 
-      - name: Upload to S3
-        run: |
-          aws s3 cp app.zip s3://${{ secrets.S3_BUCKET }}/app-${{ github.run_number }}.zip
+    - name: Upload to S3
+      run: |
+        aws s3 cp app.zip s3://$S3_BUCKET_NAME/app-${{ github.run_number }}.zip
 
-      - name: Create new EB app version
-        run: |
-          aws elasticbeanstalk create-application-version \
-            --application-name "${{ secrets.APPLICATION_NAME }}" \
-            --version-label "v-${{ github.run_number }}" \
-            --source-bundle S3Bucket="${{ secrets.S3_BUCKET }}",S3Key="app-${{ github.run_number }}.zip"
+    - name: Create EB Application Version
+      run: |
+        aws elasticbeanstalk create-application-version \
+          --application-name "$APPLICATION_NAME" \
+          --version-label "$VERSION_LABEL" \
+          --source-bundle S3Bucket="$S3_BUCKET_NAME",S3Key="app-${{ github.run_number }}.zip"
 
-      - name: Deploy to EB
-        run: |
-          aws elasticbeanstalk update-environment \
-            --environment-name "${{ secrets.ENVIRONMENT_NAME }}" \
-            --version-label "v-${{ github.run_number }}"
+    - name: Wait to ensure propagation (optional but safe)
+      run: sleep 10
+
+    - name: Update Elastic Beanstalk Environment
+      run: |
+        aws elasticbeanstalk update-environment \
+          --environment-name "$ENVIRONMENT_NAME" \
+          --version-label "$VERSION_LABEL"

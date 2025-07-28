@@ -6,7 +6,7 @@ on:
       - main  # Or your deployment branch
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}               # Change as needed
+  AWS_REGION: ${{ secrets.AWS_REGION }}
   APPLICATION_NAME: ${{ secrets.APPLICATION_NAME }}
   ENVIRONMENT_NAME: ${{ secrets.ENVIRONMENT_NAME }}
   S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
@@ -57,66 +57,3 @@ jobs:
         aws elasticbeanstalk update-environment \
           --environment-name ${{ env.ENVIRONMENT_NAME }} \
           --version-label v-${{ github.run_number }}
-
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Set Up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Zip Application
-        run: |
-          zip -r $ZIP_FILE . -x '*.git*' 'node_modules/*' '.github/*'
-
-      - name: Upload to S3
-        run: |
-          aws s3 cp $ZIP_FILE s3://$S3_BUCKET_NAME/$ZIP_FILE
-
-      - name: Create Application Version
-        run: |
-          aws elasticbeanstalk create-application-version \
-            --application-name "$APPLICATION_NAME" \
-            --version-label "$VERSION_LABEL" \
-            --source-bundle S3Bucket=$S3_BUCKET_NAME,S3Key=$ZIP_FILE
-
-      - name: Wait until application version is PROCESSED
-        run: |
-          echo "Waiting for version $VERSION_LABEL to be PROCESSED..."
-          for i in {1..30}; do
-            STATUS=$(aws elasticbeanstalk describe-application-versions \
-              --application-name "$APPLICATION_NAME" \
-              --version-labels "$VERSION_LABEL" \
-              --query 'ApplicationVersions[0].Status' \
-              --output text)
-
-            echo "Current status: $STATUS"
-
-            if [ "$STATUS" == "PROCESSED" ]; then
-              echo "Version is PROCESSED."
-              break
-            fi
-
-            if [ "$STATUS" == "FAILED" ]; then
-              echo "Version processing failed."
-              exit 1
-            fi
-
-            echo "Still waiting..."
-            sleep 10
-          done
-
-      - name: Deploy to Elastic Beanstalk
-        run: |
-          aws elasticbeanstalk update-environment \
-            --environment-name "$ENVIRONMENT_NAME" \
-            --version-label "$VERSION_LABEL"

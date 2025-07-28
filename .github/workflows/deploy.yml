@@ -7,6 +7,7 @@ on:
 
 jobs:
   deploy:
+    name: Deploy
     runs-on: ubuntu-latest
 
     env:
@@ -37,11 +38,11 @@ jobs:
 
       - name: Zip deployment package
         run: |
-          zip -r $ZIP_FILE . -x "*.git*" "node_modules/*" "tests/*"
+          zip -r "$ZIP_FILE" . -x "*.git*" "node_modules/*" "tests/*"
 
       - name: Upload to S3
         run: |
-          aws s3 cp $ZIP_FILE s3://$S3_BUCKET_NAME/$ZIP_FILE
+          aws s3 cp "$ZIP_FILE" "s3://$S3_BUCKET_NAME/$ZIP_FILE"
 
       - name: Create new EB Application Version
         run: |
@@ -61,7 +62,7 @@ jobs:
 
             echo "Status: $STATUS"
 
-            if [ "$STATUS" == "PROCESSED" ]; then
+            if [ "$STATUS" = "PROCESSED" ]; then
               echo "Version is ready for deployment."
               break
             fi

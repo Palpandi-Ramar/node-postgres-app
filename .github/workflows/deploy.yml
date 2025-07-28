@@ -1,19 +1,63 @@
-name: Deploy to Elastic Beanstalk
+name: Deploy to AWS Elastic Beanstalk
 
 on:
   push:
     branches:
-      - main
+      - main  # Or your deployment branch
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_REGION: ${{ secrets.AWS_REGION }}               # Change as needed
   APPLICATION_NAME: ${{ secrets.APPLICATION_NAME }}
   ENVIRONMENT_NAME: ${{ secrets.ENVIRONMENT_NAME }}
   S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
-  VERSION_LABEL: v-${{ github.run_number }}
-  ZIP_FILE: app-v-${{ github.run_number }}.zip
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Zip source code
+      run: |
+        zip -r app.zip . -x '*.git*' 'node_modules/*' '*.github/*' 'coverage/*'
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Upload to S3
+      run: |
+        aws s3 cp app.zip s3://${{ env.S3_BUCKET_NAME }}/app-v-${{ github.run_number }}.zip
+
+    - name: Create Elastic Beanstalk Application Version
+      run: |
+        aws elasticbeanstalk create-application-version \
+          --application-name ${{ env.APPLICATION_NAME }} \
+          --version-label v-${{ github.run_number }} \
+          --source-bundle S3Bucket=${{ env.S3_BUCKET_NAME }},S3Key=app-v-${{ github.run_number }}.zip
+
+    - name: Wait for Application Version to Register
+      run: sleep 20
+
+    - name: Deploy to Elastic Beanstalk
+      run: |
+        aws elasticbeanstalk update-environment \
+          --environment-name ${{ env.ENVIRONMENT_NAME }} \
+          --version-label v-${{ github.run_number }}
+
 
 jobs:
   deploy:

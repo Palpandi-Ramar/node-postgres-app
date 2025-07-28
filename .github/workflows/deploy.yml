@@ -5,13 +5,13 @@ on:
     branches:
       - main  # Trigger deployment on push to main branch 
 
+permissions:
+  id-token: write      # Required for OIDC authentication
+  contents: read       # Required to checkout code
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
-    permissions:
-      id-token: write      # Required for OIDC auth
-      contents: read       # To read code from the repo
 
     steps:
       - name: Checkout code
@@ -23,7 +23,8 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}  # Format: arn:aws:iam::ACCOUNT_ID:role/github-actions-deploy-role
+          role-session-name: github-actions-session
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Upload to S3

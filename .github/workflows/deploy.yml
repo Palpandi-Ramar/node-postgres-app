@@ -3,11 +3,15 @@ name: Deploy to Elastic Beanstalk
 on:
   push:
     branches:
-      - main  # Change if using another branch 
+      - main  # Trigger deployment on push to main branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write      # Required for OIDC auth
+      contents: read       # To read code from the repo
 
     steps:
       - name: Checkout code
@@ -16,17 +20,17 @@ jobs:
       - name: Zip source code
         run: zip -r app.zip . -x "*.git*" "*.github*"
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Upload to S3
-        run: aws s3 cp app.zip s3://${{ secrets.S3_BUCKET }}/app-${{ github.run_number }}.zip
+        run: |
+          aws s3 cp app.zip s3://${{ secrets.S3_BUCKET }}/app-${{ github.run_number }}.zip
 
-      - name: Create EB Application Version
+      - name: Create Elastic Beanstalk Application Version
         run: |
           aws elasticbeanstalk create-application-version \
             --application-name "${{ secrets.APPLICATION_NAME }}" \

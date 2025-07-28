@@ -3,7 +3,7 @@ name: Deploy to Elastic Beanstalk
 on:
   push:
     branches:
-      - main  # or your deployment branch
+      - main
 
 env:
   VERSION_LABEL: v-${{ github.run_number }}
@@ -27,27 +27,25 @@ jobs:
       run: |
         zip -r app.zip . -x "*.git*" "*.github*" "tmp/*" "log/*"
 
-    - name: Upload to S3
+    - name: Upload ZIP to S3
       run: |
         aws s3 cp app.zip s3://${{ secrets.S3_BUCKET_NAME }}/app-${{ env.VERSION_LABEL }}.zip
 
-    - name: Create new EB application version
+    - name: Create Application Version
       run: |
         aws elasticbeanstalk create-application-version \
           --application-name "${{ secrets.APPLICATION_NAME }}" \
           --version-label "${{ env.VERSION_LABEL }}" \
           --source-bundle S3Bucket=${{ secrets.S3_BUCKET_NAME }},S3Key=app-${{ env.VERSION_LABEL }}.zip
 
-    - name: Wait for app version to register (optional but safe)
-      run: |
-        echo "Waiting for application version to be available..."
-        sleep 10
+    - name: Wait for version to register
+      run: sleep 60
 
-    - name: Deploy to Elastic Beanstalk
+    - name: Update Environment to New Version
       run: |
         aws elasticbeanstalk update-environment \
           --environment-name "${{ secrets.ENVIRONMENT_NAME }}" \
           --version-label "${{ env.VERSION_LABEL }}"
 
-    - name: Deployment Complete
-      run: echo "Deployment to Elastic Beanstalk environment completed successfully!"
+    - name:  Deployment Complete
+      run: echo "Successfully deployed version $VERSION_LABEL"

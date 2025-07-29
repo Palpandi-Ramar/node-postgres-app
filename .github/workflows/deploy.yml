@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -30,7 +31,7 @@ jobs:
 
     - name: Zip source bundle
       run: |
-        zip -r app.zip . -x '*.git*' 'node_modules/*' '.github/*' 'coverage/*'
+        zip -r app.zip . -x '*.git*' '.github/*' 'coverage/*'
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
@@ -49,6 +50,9 @@ jobs:
           --application-name ${{ env.APPLICATION_NAME }} \
           --version-label ${{ env.VERSION_LABEL }} \
           --source-bundle S3Bucket=${{ env.S3_BUCKET_NAME }},S3Key=app-${{ env.VERSION_LABEL }}.zip
+        
+        aws elasticbeanstalk update-environment --application-name ${{ env.APPLICATION_NAME }} --environment-name ${{ env.ENVIRONMENT_NAME }} --version-label ${{ env.VERSION_LABEL }}
+
 
     - name: Wait for Application Version to be processed
       run: |
@@ -70,9 +74,3 @@ jobs:
           fi
           sleep 5
         done
-
-    - name: Deploy to Elastic Beanstalk
-      run: |
-        aws elasticbeanstalk update-environment \
-          --environment-name ${{ env.ENVIRONMENT_NAME }} \
-          --version-label ${{ env.VERSION_LABEL }}

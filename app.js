@@ -1,10 +1,24 @@
 const express = require('express');
 const pool = require('./db');
+const { Client } = require('@opensearch-project/opensearch');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.set('view engine', 'ejs');
 app.use(express.urlencoded({ extended: true }));
+
+// Initialize OpenSearch client
+const osClient = new Client({
+  node: process.env.OPENSEARCH_HOST, //  Replace this
+  auth: {
+    username: process.env.OPENSEARCH_USERNAME, //  Replace with OpenSearch username
+    password: process.env.OPENSEARCH_PASSWORD, //  Replace with OpenSearch password
+  },
+  ssl: {
+    rejectUnauthorized: false // If using self-signed certs (for dev only)
+  }
+});
 
 // Ensure table exists before handling any requests
 async function ensureTableExists() {
@@ -16,7 +30,6 @@ async function ensureTableExists() {
       );
     `);
 
-    // Insert a default message if table is empty
     const result = await pool.query('SELECT COUNT(*) FROM home_content;');
     const count = parseInt(result.rows[0].count, 10);
 
@@ -26,7 +39,7 @@ async function ensureTableExists() {
     }
   } catch (err) {
     console.error('Error ensuring table exists:', err);
-    process.exit(1); // Exit app if DB setup fails
+    process.exit(1);
   }
 }
 
@@ -52,7 +65,19 @@ app.get('/help', (req, res) => {
   res.render('help');
 });
 
-//  Start server only after table check
+//  Add this test route for OpenSearch connection check
+app.get('/opensearch-test', async (req, res) => {
+  try {
+    const info = await osClient.info();
+    console.log('OpenSearch Info:', info.body);
+    res.send(' OpenSearch connection successful!');
+  } catch (err) {
+    console.error(' OpenSearch connection failed:', err);
+    res.status(500).send(' Failed to connect to OpenSearch');
+  }
+});
+
+// Start server only after DB check
 ensureTableExists().then(() => {
   app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
